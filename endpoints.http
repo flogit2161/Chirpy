@@ -1,9 +1,10 @@
 // HTTP FILE TO TEST REQUESTS
 
-POST http://localhost:8080/api/validate_chirp HTTP/1.1
+POST http://localhost:8080/api/chirps HTTP/1.1
 content-type: application/json
 
 {
-   "body": "I really need a kerfuffle to go to bed sooner, Fornax !" 
-} 
+  "body": "If you're committed enough, you can make any story work.",
+  "user_id": "${userID1}"
+}
 

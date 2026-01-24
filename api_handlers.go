@@ -3,16 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync/atomic"
 
 	"github.com/flogit2161/Chirpy/internal/database"
+	"github.com/google/uuid"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
+	platform       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -35,25 +38,32 @@ func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	cfg.fileserverHits.Store(0)
-	w.Write([]byte("Reset number of hits to server"))
+	if cfg.platform != "dev" {
+		w.WriteHeader(403)
+		return
+	}
+	err := cfg.db.DeleteUsers(r.Context())
+	if err != nil {
+		log.Printf("Could not reset users table")
+	}
+	w.WriteHeader(200)
+	w.Write([]byte("Users table reseted successfully"))
 }
 
-func (cfg *apiConfig) handlerValidate(w http.ResponseWriter, r *http.Request) {
-	type bodyJSON struct {
-		Body string `json:"body"`
+func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
+	type BodyJSON struct {
+		Body   string `json:"body"`
+		UserID string `json:"user_id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
 
 	defer r.Body.Close()
-	body := bodyJSON{}
+	body := BodyJSON{}
 
 	err := decoder.Decode(&body)
 	if err != nil {
-		respondWithError(w, 500, "Something went wrong")
+		respondWithError(w, 500, "Error decoding the request")
 		return
 	}
 
@@ -61,7 +71,8 @@ func (cfg *apiConfig) handlerValidate(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 400, "Chirp is too long")
 		return
 	}
-	//MOVE THIS TO HELPER FUNC
+
+	//Filtering body.Body bad words
 	split := strings.Fields(body.Body)
 	for i, s := range split {
 		lower := strings.ToLower(s)
@@ -69,13 +80,55 @@ func (cfg *apiConfig) handlerValidate(w http.ResponseWriter, r *http.Request) {
 			split[i] = "****"
 		}
 	}
-	cleanedWords := strings.Join(split, " ")
+	cleanedBody := strings.Join(split, " ")
 
-	type validResponse struct {
-		Cleaned string `json:"cleaned_body"`
+	parsedUserID, err := uuid.Parse(body.UserID)
+	if err != nil {
+		respondWithError(w, 400, "Error parsing User's ID into a UUID")
+		return
 	}
-	respondWithJSON(w, 200, validResponse{
-		Cleaned: cleanedWords,
+
+	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   cleanedBody,
+		UserID: parsedUserID,
 	})
 
+	jsonChirp := Chirps{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
+	}
+
+	respondWithJSON(w, 201, jsonChirp)
+
+}
+
+func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+
+	defer r.Body.Close()
+	user := User{}
+
+	err := decoder.Decode(&user)
+	if err != nil {
+		respondWithError(w, 500, "Error decoding the request")
+		return
+	}
+
+	createdUser, err := cfg.db.CreateUser(r.Context(), user.Email)
+	if err != nil {
+		respondWithError(w, 500, "Error creating user")
+		return
+	}
+	// Map database.User to main.User to send back JSON
+	user = User{
+		ID:        createdUser.ID,
+		CreatedAt: createdUser.CreatedAt,
+		UpdatedAt: createdUser.UpdatedAt,
+		Email:     createdUser.Email,
+	}
+
+	respondWithJSON(w, 201, user)
 }
