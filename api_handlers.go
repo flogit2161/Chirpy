@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
+
+	"github.com/flogit2161/Chirpy/internal/database"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -57,12 +61,21 @@ func (cfg *apiConfig) handlerValidate(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 400, "Chirp is too long")
 		return
 	}
+	//MOVE THIS TO HELPER FUNC
+	split := strings.Fields(body.Body)
+	for i, s := range split {
+		lower := strings.ToLower(s)
+		if lower == "kerfuffle" || lower == "sharbert" || lower == "fornax" {
+			split[i] = "****"
+		}
+	}
+	cleanedWords := strings.Join(split, " ")
 
 	type validResponse struct {
-		Valid bool `json:"valid"`
+		Cleaned string `json:"cleaned_body"`
 	}
 	respondWithJSON(w, 200, validResponse{
-		Valid: true,
+		Cleaned: cleanedWords,
 	})
 
 }
