@@ -1,10 +1,5 @@
 // HTTP FILE TO TEST REQUESTS
 
-POST http://localhost:8080/api/chirps HTTP/1.1
-content-type: application/json
+GET http://localhost:8080/api/chirps/4c556a70-c569-4242-8681-0799347bb47a  HTTP/1.1
 
-{
-  "body": "If you're committed enough, you can make any story work.",
-  "user_id": "${userID1}"
-}
 

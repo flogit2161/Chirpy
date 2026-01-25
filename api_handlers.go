@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/flogit2161/Chirpy/internal/auth"
 	"github.com/flogit2161/Chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -117,7 +118,16 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	createdUser, err := cfg.db.CreateUser(r.Context(), user.Email)
+	hashedPassword, err := auth.HashPassword(user.Password)
+	if err != nil {
+		respondWithError(w, 500, "Error hashing the users password")
+		return
+	}
+
+	createdUser, err := cfg.db.CreateUser(r.Context(), database.CreateUserParams{
+		Email:          user.Email,
+		HashedPassword: hashedPassword,
+	})
 	if err != nil {
 		respondWithError(w, 500, "Error creating user")
 		return
@@ -131,4 +141,92 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondWithJSON(w, 201, user)
+}
+
+func (cfg *apiConfig) handlerRetrieveAllChirps(w http.ResponseWriter, r *http.Request) {
+
+	chirps, err := cfg.db.RetrieveAllChirps(r.Context())
+	if err != nil {
+		respondWithJSON(w, 400, "Error retrieving the chirps")
+		return
+	}
+
+	jsonChirpsList := []Chirps{}
+	for _, ch := range chirps {
+		jsonChirp := Chirps{
+			ID:        ch.ID,
+			CreatedAt: ch.CreatedAt,
+			UpdatedAt: ch.UpdatedAt,
+			Body:      ch.Body,
+			UserID:    ch.UserID,
+		}
+		jsonChirpsList = append(jsonChirpsList, jsonChirp)
+	}
+	respondWithJSON(w, 200, jsonChirpsList)
+}
+
+func (cfg *apiConfig) handlerRetrieveChirp(w http.ResponseWriter, r *http.Request) {
+	chirpID := r.PathValue("chirpID")
+	parsedID, err := uuid.Parse(chirpID)
+	if err != nil {
+		respondWithError(w, 400, "Error parsing Chirp ID into a UUID")
+		return
+	}
+
+	chirp, err := cfg.db.RetrieveChirp(r.Context(), parsedID)
+	if err != nil {
+		respondWithError(w, 404, "Error trying to load the chirp at this ID")
+		return
+	}
+
+	jsonChirp := Chirps{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
+	}
+
+	respondWithJSON(w, 200, jsonChirp)
+
+}
+
+func (cfg *apiConfig) handlerLogIn(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+
+	defer r.Body.Close()
+	user := User{}
+
+	err := decoder.Decode(&user)
+	if err != nil {
+		respondWithError(w, 500, "Error decoding the request")
+		return
+	}
+
+	userLogs, err := cfg.db.GetUserByEmail(r.Context(), user.Email)
+	if err != nil {
+		respondWithError(w, 401, "Error accessing user via email, please create user before logging in")
+		return
+	}
+
+	match, err := auth.CheckPasswordHash(user.Password, userLogs.HashedPassword)
+	if err != nil {
+		respondWithError(w, 500, "Error with password hashing")
+		return
+	}
+
+	if match == true {
+		jsonUser := User{
+			ID:        userLogs.ID,
+			CreatedAt: userLogs.CreatedAt,
+			UpdatedAt: userLogs.UpdatedAt,
+			Email:     userLogs.Email,
+		}
+		respondWithJSON(w, 200, jsonUser)
+		return
+	} else {
+		respondWithError(w, 401, "Password doesnt match")
+		return
+	}
+
 }
