@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/flogit2161/Chirpy/internal/auth"
 	"github.com/flogit2161/Chirpy/internal/database"
@@ -17,6 +18,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	jwt            string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -52,6 +54,17 @@ func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
+
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithJSON(w, 500, "Could not load user's token")
+	}
+
+	validatedUUID, err := auth.ValidateJWT(bearerToken, cfg.jwt)
+	if err != nil {
+		respondWithJSON(w, 400, "Could not authenticate user, please log in again")
+	}
+
 	type BodyJSON struct {
 		Body   string `json:"body"`
 		UserID string `json:"user_id"`
@@ -62,7 +75,7 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 	defer r.Body.Close()
 	body := BodyJSON{}
 
-	err := decoder.Decode(&body)
+	err = decoder.Decode(&body)
 	if err != nil {
 		respondWithError(w, 500, "Error decoding the request")
 		return
@@ -83,15 +96,9 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 	}
 	cleanedBody := strings.Join(split, " ")
 
-	parsedUserID, err := uuid.Parse(body.UserID)
-	if err != nil {
-		respondWithError(w, 400, "Error parsing User's ID into a UUID")
-		return
-	}
-
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   cleanedBody,
-		UserID: parsedUserID,
+		UserID: validatedUUID,
 	})
 
 	jsonChirp := Chirps{
@@ -192,41 +199,58 @@ func (cfg *apiConfig) handlerRetrieveChirp(w http.ResponseWriter, r *http.Reques
 }
 
 func (cfg *apiConfig) handlerLogIn(w http.ResponseWriter, r *http.Request) {
+	type loginParams struct {
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds int    `json:"expires_in_seconds"`
+	}
+
 	decoder := json.NewDecoder(r.Body)
 
 	defer r.Body.Close()
-	user := User{}
+	logs := loginParams{}
 
-	err := decoder.Decode(&user)
+	err := decoder.Decode(&logs)
 	if err != nil {
 		respondWithError(w, 500, "Error decoding the request")
 		return
 	}
 
-	userLogs, err := cfg.db.GetUserByEmail(r.Context(), user.Email)
+	userLogs, err := cfg.db.GetUserByEmail(r.Context(), logs.Email)
 	if err != nil {
 		respondWithError(w, 401, "Error accessing user via email, please create user before logging in")
 		return
 	}
 
-	match, err := auth.CheckPasswordHash(user.Password, userLogs.HashedPassword)
+	match, err := auth.CheckPasswordHash(logs.Password, userLogs.HashedPassword)
 	if err != nil {
 		respondWithError(w, 500, "Error with password hashing")
 		return
 	}
 
-	if match == true {
-		jsonUser := User{
-			ID:        userLogs.ID,
-			CreatedAt: userLogs.CreatedAt,
-			UpdatedAt: userLogs.UpdatedAt,
-			Email:     userLogs.Email,
-		}
-		respondWithJSON(w, 200, jsonUser)
-		return
-	} else {
+	if !match {
 		respondWithError(w, 401, "Password doesnt match")
 		return
 	}
+
+	expiration := time.Hour
+	if logs.ExpiresInSeconds > 0 && logs.ExpiresInSeconds < 3600 {
+		expiration = time.Duration(logs.ExpiresInSeconds) * time.Second
+	}
+
+	token, err := auth.MakeJWT(userLogs.ID, cfg.jwt, expiration)
+	if err != nil {
+		respondWithError(w, 500, "Unable to create token for user")
+		return
+	}
+
+	jsonUser := User{
+		ID:        userLogs.ID,
+		CreatedAt: userLogs.CreatedAt,
+		UpdatedAt: userLogs.UpdatedAt,
+		Email:     userLogs.Email,
+		Token:     token,
+	}
+	respondWithJSON(w, 200, jsonUser)
 
 }

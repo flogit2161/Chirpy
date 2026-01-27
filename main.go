@@ -20,6 +20,7 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
 	Password  string    `json:"password,omitempty"`
+	Token     string    `json:"token,omitempty"`
 }
 
 type Chirps struct {
@@ -32,9 +33,9 @@ type Chirps struct {
 
 func main() {
 	godotenv.Load()
-	// Maybe handle empty strings here
 	dbURL := os.Getenv("DB_URL")
 	platformPermission := os.Getenv("PLATFORM")
+	jwtToken := os.Getenv("JWT_SECRET")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal("Could not load database")
@@ -44,6 +45,7 @@ func main() {
 		fileserverHits: atomic.Int32{},
 		db:             dbQueries,
 		platform:       platformPermission,
+		jwt:            jwtToken,
 	}
 
 	serveMux := http.NewServeMux()
