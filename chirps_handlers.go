@@ -74,24 +74,52 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 
 func (cfg *apiConfig) handlerRetrieveAllChirps(w http.ResponseWriter, r *http.Request) {
 
-	chirps, err := cfg.db.RetrieveAllChirps(r.Context())
-	if err != nil {
-		respondWithError(w, 400, "Error retrieving the chirps")
-		return
+	author_id := r.URL.Query().Get("author_id")
+	if author_id == "" {
+		chirps, err := cfg.db.RetrieveAllChirps(r.Context())
+		if err != nil {
+			respondWithError(w, 400, "Error retrieving the chirps")
+			return
+		}
+
+		jsonChirpsList := []Chirps{}
+		for _, ch := range chirps {
+			jsonChirp := Chirps{
+				ID:        ch.ID,
+				CreatedAt: ch.CreatedAt,
+				UpdatedAt: ch.UpdatedAt,
+				Body:      ch.Body,
+				UserID:    ch.UserID,
+			}
+			jsonChirpsList = append(jsonChirpsList, jsonChirp)
+		}
+		respondWithJSON(w, 200, jsonChirpsList)
+	} else {
+		parsedAuthorID, err := uuid.Parse(author_id)
+		if err != nil {
+			respondWithError(w, 400, "Error parsing author ID into a UUID")
+			return
+		}
+		usersChirps, err := cfg.db.RetrieveAllChirpsFromUser(r.Context(), parsedAuthorID)
+		if err != nil {
+			respondWithError(w, 400, "Error retrieving user's chirps")
+			return
+		}
+
+		usersChirpsList := []Chirps{}
+		for _, ch := range usersChirps {
+			jsonChirp := Chirps{
+				ID:        ch.ID,
+				CreatedAt: ch.CreatedAt,
+				UpdatedAt: ch.UpdatedAt,
+				Body:      ch.Body,
+				UserID:    ch.UserID,
+			}
+			usersChirpsList = append(usersChirpsList, jsonChirp)
+		}
+		respondWithJSON(w, 200, usersChirpsList)
 	}
 
-	jsonChirpsList := []Chirps{}
-	for _, ch := range chirps {
-		jsonChirp := Chirps{
-			ID:        ch.ID,
-			CreatedAt: ch.CreatedAt,
-			UpdatedAt: ch.UpdatedAt,
-			Body:      ch.Body,
-			UserID:    ch.UserID,
-		}
-		jsonChirpsList = append(jsonChirpsList, jsonChirp)
-	}
-	respondWithJSON(w, 200, jsonChirpsList)
 }
 
 func (cfg *apiConfig) handlerRetrieveChirp(w http.ResponseWriter, r *http.Request) {

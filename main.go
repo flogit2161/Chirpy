@@ -22,6 +22,7 @@ type User struct {
 	Password     string    `json:"password,omitempty"`
 	Token        string    `json:"token,omitempty"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
+	RedChirpy    bool      `json:"is_chirpy_red"`
 }
 
 type Chirps struct {
@@ -37,6 +38,7 @@ func main() {
 	dbURL := os.Getenv("DB_URL")
 	platformPermission := os.Getenv("PLATFORM")
 	jwtToken := os.Getenv("JWT_SECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -49,6 +51,7 @@ func main() {
 		db:             dbQueries,
 		platform:       platformPermission,
 		jwt:            jwtToken,
+		polka:          polkaKey,
 	}
 
 	serveMux := http.NewServeMux()
@@ -67,6 +70,7 @@ func main() {
 	serveMux.HandleFunc("POST /api/login", apiCfg.handlerLogIn)
 	serveMux.HandleFunc("POST /api/refresh", apiCfg.handlerRefresh)
 	serveMux.HandleFunc("POST /api/revoke", apiCfg.handlerRevoke)
+	serveMux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerUpgradeRedChirpy)
 
 	serveMux.HandleFunc("PUT /api/users", apiCfg.handlerUpdateUserLogs)
 

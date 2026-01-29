@@ -8,6 +8,7 @@ import (
 
 	"github.com/flogit2161/Chirpy/internal/auth"
 	"github.com/flogit2161/Chirpy/internal/database"
+	"github.com/google/uuid"
 )
 
 func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +56,7 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		CreatedAt: createdUser.CreatedAt,
 		UpdatedAt: createdUser.UpdatedAt,
 		Email:     createdUser.Email,
+		RedChirpy: createdUser.IsChirpyRed,
 	}
 
 	respondWithJSON(w, 201, user)
@@ -125,6 +127,7 @@ func (cfg *apiConfig) handlerLogIn(w http.ResponseWriter, r *http.Request) {
 		Email:        userLogs.Email,
 		Token:        token,
 		RefreshToken: encodedRefreshToken,
+		RedChirpy:    userLogs.IsChirpyRed,
 	}
 	respondWithJSON(w, 200, jsonUser)
 
@@ -229,7 +232,58 @@ func (cfg *apiConfig) handlerUpdateUserLogs(w http.ResponseWriter, r *http.Reque
 		CreatedAt: newUserLogs.CreatedAt,
 		UpdatedAt: newUserLogs.UpdatedAt,
 		Email:     newUserLogs.Email,
+		RedChirpy: newUserLogs.IsChirpyRed,
 	}
 
 	respondWithJSON(w, 200, newUser)
+}
+
+func (cfg *apiConfig) handlerUpgradeRedChirpy(w http.ResponseWriter, r *http.Request) {
+	key, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		respondWithJSON(w, 401, "Error getting the API Key from header")
+		return
+	}
+
+	if key != cfg.polka {
+		respondWithJSON(w, 401, "API Key does not match")
+		return
+	}
+
+	type bodyRequest struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+
+	defer r.Body.Close()
+	request := bodyRequest{}
+
+	err = decoder.Decode(&request)
+	if err != nil {
+		respondWithError(w, 500, "Error decoding the request")
+		return
+	}
+
+	parsedID, err := uuid.Parse(request.Data.UserID)
+	if err != nil {
+		respondWithError(w, 500, "Error parsing user's id into a UUID")
+		return
+	}
+
+	if request.Event != "user.upgraded" {
+		w.WriteHeader(204)
+		return
+	}
+
+	err = cfg.db.UpdateUserRedChirpy(r.Context(), parsedID)
+	if err != nil {
+		respondWithError(w, 404, "User can't be found")
+		return
+	}
+
+	w.WriteHeader(204)
 }
