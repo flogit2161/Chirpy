@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/flogit2161/Chirpy/internal/auth"
@@ -75,6 +76,9 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 func (cfg *apiConfig) handlerRetrieveAllChirps(w http.ResponseWriter, r *http.Request) {
 
 	author_id := r.URL.Query().Get("author_id")
+	sorted := r.URL.Query().Get("sort")
+	jsonChirpsList := []Chirps{}
+
 	if author_id == "" {
 		chirps, err := cfg.db.RetrieveAllChirps(r.Context())
 		if err != nil {
@@ -82,7 +86,6 @@ func (cfg *apiConfig) handlerRetrieveAllChirps(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		jsonChirpsList := []Chirps{}
 		for _, ch := range chirps {
 			jsonChirp := Chirps{
 				ID:        ch.ID,
@@ -93,7 +96,6 @@ func (cfg *apiConfig) handlerRetrieveAllChirps(w http.ResponseWriter, r *http.Re
 			}
 			jsonChirpsList = append(jsonChirpsList, jsonChirp)
 		}
-		respondWithJSON(w, 200, jsonChirpsList)
 	} else {
 		parsedAuthorID, err := uuid.Parse(author_id)
 		if err != nil {
@@ -106,7 +108,6 @@ func (cfg *apiConfig) handlerRetrieveAllChirps(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		usersChirpsList := []Chirps{}
 		for _, ch := range usersChirps {
 			jsonChirp := Chirps{
 				ID:        ch.ID,
@@ -115,10 +116,15 @@ func (cfg *apiConfig) handlerRetrieveAllChirps(w http.ResponseWriter, r *http.Re
 				Body:      ch.Body,
 				UserID:    ch.UserID,
 			}
-			usersChirpsList = append(usersChirpsList, jsonChirp)
+			jsonChirpsList = append(jsonChirpsList, jsonChirp)
 		}
-		respondWithJSON(w, 200, usersChirpsList)
 	}
+	if sorted == "desc" {
+		sort.Slice(jsonChirpsList, func(i, j int) bool {
+			return jsonChirpsList[i].CreatedAt.After(jsonChirpsList[j].CreatedAt)
+		})
+	}
+	respondWithJSON(w, 200, jsonChirpsList)
 
 }
 
