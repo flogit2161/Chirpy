@@ -43,3 +43,23 @@ func TestBearerTokenTrim(t *testing.T) {
 		t.Errorf("Error cleaning header. Expected : 123, Token : %v", token)
 	}
 }
+
+func TestMakeRefreshToken(t *testing.T) {
+	encodedHex, err := MakeRefreshToken()
+	if err != nil {
+		t.Fatalf("MakeRefreshToken function errored")
+	}
+
+	if len(encodedHex) != 64 {
+		t.Errorf("Hex should be 32 bytes (64 hex lenght)")
+	}
+
+	secondEncodedHex, err := MakeRefreshToken()
+	if err != nil {
+		t.Fatalf("MakeRefreshToken function errored")
+	}
+
+	if encodedHex == secondEncodedHex {
+		t.Errorf("The two hex are equivalent")
+	}
+}
