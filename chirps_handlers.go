@@ -119,3 +119,43 @@ func (cfg *apiConfig) handlerRetrieveChirp(w http.ResponseWriter, r *http.Reques
 	respondWithJSON(w, 200, jsonChirp)
 
 }
+
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Token is either expired or does not exist")
+		return
+	}
+
+	userUUID, err := auth.ValidateJWT(bearerToken, cfg.jwt)
+	if err != nil {
+		respondWithError(w, 401, "Error validating token, token is not valid anymore")
+		return
+	}
+
+	chirpID := r.PathValue("chirpID")
+	parsedID, err := uuid.Parse(chirpID)
+	if err != nil {
+		respondWithError(w, 400, "Error parsing Chirp ID into a UUID")
+		return
+	}
+
+	chirp, err := cfg.db.RetrieveChirp(r.Context(), parsedID)
+	if err != nil {
+		respondWithError(w, 404, "Error trying to load the chirp at this ID")
+		return
+	}
+
+	if chirp.UserID != userUUID {
+		respondWithError(w, 403, "User is not allowed to delete a chirp thats not his")
+		return
+	}
+
+	err = cfg.db.DeleteChirp(r.Context(), chirp.ID)
+	if err != nil {
+		respondWithError(w, 400, "Error deleting chirp")
+		return
+	}
+
+	w.WriteHeader(204)
+}

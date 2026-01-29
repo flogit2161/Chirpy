@@ -175,3 +175,61 @@ func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(204)
 }
+
+func (cfg *apiConfig) handlerUpdateUserLogs(w http.ResponseWriter, r *http.Request) {
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Token is either expired or does not exist")
+		return
+	}
+
+	userUUID, err := auth.ValidateJWT(bearerToken, cfg.jwt)
+	if err != nil {
+		respondWithError(w, 401, "Error validating token, token is not valid anymore")
+		return
+	}
+
+	type loginParams struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+
+	defer r.Body.Close()
+	logs := loginParams{}
+
+	err = decoder.Decode(&logs)
+	if err != nil {
+		respondWithError(w, 500, "Error decoding the request")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(logs.Password)
+	if err != nil {
+		respondWithError(w, 500, "Error hashing the password")
+		return
+	}
+
+	newUserLogs, err := cfg.db.UpdateLogInParams(
+		r.Context(),
+		database.UpdateLogInParamsParams{
+			ID:             userUUID,
+			Email:          logs.Email,
+			HashedPassword: hashedPassword,
+		},
+	)
+	if err != nil {
+		respondWithError(w, 500, "Error assigning new parameters to the user")
+		return
+	}
+
+	newUser := User{
+		ID:        userUUID,
+		CreatedAt: newUserLogs.CreatedAt,
+		UpdatedAt: newUserLogs.UpdatedAt,
+		Email:     newUserLogs.Email,
+	}
+
+	respondWithJSON(w, 200, newUser)
+}
